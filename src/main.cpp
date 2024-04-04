@@ -17,11 +17,16 @@
 #define PIN PINB0
 
 int setPrescaler_tc0(char option);
-int setMax_count_tc0(int num);
-void my_delay_us(unsigned long x);
+int setMax_count_us(float x,
+    unsigned char top,
+    char prescaler_option);
+void my_delay_us(float x);
 void set_tc0_mode(char mode);
 void my_delay_1e6us();
 void my_delay_2s_ctc();
+void my_delay_us_ctc(float x,
+    unsigned long top,
+    char prescaler_option);
 
 volatile unsigned long num0V = 0;
 
@@ -36,8 +41,6 @@ void my_delay_2s_ctc()
 {
   set_tc0_mode(2);
   OCR0A = 124; // TOP
-  bitSet(TIMSK0, OCIE0A); 
-
   unsigned long num0V_max = 125 * 2;
 
   num0V = 0;
@@ -49,9 +52,20 @@ void my_delay_2s_ctc()
 
 
 void my_delay_us_ctc(float x,
-    unsigned char top,
-    char prescaler_option);
+    unsigned long top,
+    char prescaler_option)
+  {
+    set_tc0_mode(2);
+    OCR0A = top; // TOP
+    unsigned long num0V_max = 125 * x;
 
+    num0V = 0;
+    TCNT0 = 0;
+    setPrescaler_tc0(prescaler_option);
+    while (num0V < num0V_max);
+    setPrescaler_tc0(0);
+
+  }
 
 
 // delay of 1 second with default prescaler
@@ -68,20 +82,24 @@ void my_delay_1e6us()
   setPrescaler_tc0(0);
 }
 
-int setMax_count_tc0(int num)
+int setMax_count_us(float x,
+    unsigned char top,
+    char prescaler_option)
 {
-  int prescalers[6] = {0, 1, 8, 64, 256, 1024};
-  float overflow_count = ((1 / ((float)FOSC / prescalers[PRESCALER])) * 256);
-  float time_sec = (float)num / 1000;
+  unsigned long prescalers[6] = {0, 1, 8, 64, 256, 1024};
+  float overflow_count = ((1 / ((float)FOSC / prescalers[PRESCALER])) * top);
+  float time_sec = x / 1000000;
   float max = (time_sec / overflow_count);
-  int max_count = (int)round(max);
+  unsigned long max_count = (unsigned long)round(max);
   return max_count;
 }
 
 // custom delay with prescalers
-void my_delay_ms(unsigned long x)
+void my_delay_ms(float x)
 {
-  unsigned long num0V_max = setMax_count_tc0(x);
+  int prescale = 1;
+  unsigned long top = 256;
+  unsigned long num0V_max = setMax_count_us(x, top, prescale);
   num0V = 0; // timer0 overflow counter, sets count to 0
   TCNT0 = 0; // timer0 counter register, sets count to 0
   setPrescaler_tc0(PRESCALER);
@@ -149,8 +167,19 @@ int main()
 {
   set_tc0_mode(2);
   usart_init(MYUBRR); // 103-9600 bps; 8-115200
-  bitSet(TIMSK0, TOIE0); // enable timer0 overflow interrupt
+  // bitSet(TIMSK0, TOIE0); // enable timer0 overflow interrupt
+  bitSet(TIMSK0, OCIE0A); // enable timer0 compare interrupt
   sei(); // enable global interrupts
   bitSet(*DDR, PIN); // set pin 8 as output
+
+  while(1)
+  {
+    my_delay_us_ctc(2, 124, 5);
+    //my_delay_2s_ctc();
+    bitSet(*PORT, PIN);
+    //my_delay_2s_ctc();
+    my_delay_us_ctc(2, 124, 5);
+    bitClear(*PORT, PIN);
+  }
 }
 
